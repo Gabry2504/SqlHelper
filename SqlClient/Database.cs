@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.Data.SqlClient;
 using SqlClient.Domain;
 using SqlClient.SeedWork;
+using Dapper;
 
 namespace SqlClient;
 
@@ -14,20 +15,11 @@ public class Database(string connectionString) : IDatabase
         const string query = "SELECT Id, Note, Inserted FROM Notes";
 
         connection.Open();
-        
-        using var command = new SqlCommand(query, connection);
-        using var reader = command.ExecuteReader();
+       
+        var note = connection.Query<MyNote>(query);
 
-        while (reader.Read())
-        {
-            yield return new(
-                reader.GetInt32(0),
-                reader.GetString(1),
-                reader.GetDateTimeOffset(2)
-            );
-        }
-        
         connection.Close();
+        return note;
     }
 
     public void Insert(string note)
@@ -35,12 +27,8 @@ public class Database(string connectionString) : IDatabase
         const string query = "INSERT INTO Notes (Note, Inserted) VALUES (@Note, @Inserted)";
 
         connection.Open();
-        
-        using var command = new SqlCommand(query, connection);
-        command.Parameters.AddWithValue("@Note", note);
-        command.Parameters.AddWithValue("@Inserted", DateTimeOffset.Now);
 
-        command.ExecuteNonQuery();
+        connection.Execute(query, new { Note = note, Inserted = DateTimeOffset.Now });
         
         connection.Close();
     }
@@ -51,11 +39,7 @@ public class Database(string connectionString) : IDatabase
 
         connection.Open();
         
-        using var command = new SqlCommand(query, connection);
-        command.Parameters.AddWithValue("@Id", id);
-        command.Parameters.AddWithValue("@Note", note);
-
-        command.ExecuteNonQuery();
+        connection.Execute(query, new { Id = id, Note = note });
 
         connection.Close();
     }
@@ -66,10 +50,7 @@ public class Database(string connectionString) : IDatabase
 
         connection.Open();
 
-        using var command = new SqlCommand(query, connection);
-        command.Parameters.AddWithValue("@Id", id);
-
-        command.ExecuteNonQuery();
+        connection.Execute(query, new {Id = id});
         
         connection.Close();
     }
@@ -82,17 +63,13 @@ public class Database(string connectionString) : IDatabase
         var time = DateTimeOffset.Now;
         
         var transaction = connection.BeginTransaction();
-        using var command = new SqlCommand(query, connection,transaction);
         
         try
         {
-            command.Parameters.Add("@Note", SqlDbType.NVarChar);
-            command.Parameters.Add("@Inserted", SqlDbType.DateTimeOffset);
+            
             foreach (var note in notes)
             {
-                command.Parameters["@Note"].Value = note;
-                command.Parameters["@Inserted"].Value = time;
-                command.ExecuteNonQuery();
+                connection.Execute(query, new { Note = note, Inserted = time }, transaction);
             }
             
             transaction.Commit();
